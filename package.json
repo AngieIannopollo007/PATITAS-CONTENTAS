@@ -1,0 +1,8 @@
+{
+  "name": "patitas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Adopciones, refugios y comunidad PATITAS",
+  "engines": { "node": ">=24" },
+  "scripts": { "start": "node servidor.js", "test": "node --test" }
+}
