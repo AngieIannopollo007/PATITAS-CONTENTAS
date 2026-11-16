@@ -48,19 +48,24 @@ function enviarGmail(config, correo, conectar = tls.connect) {
     });
   });
 }
-function crearBandeja(repo, config, transporte = enviarGmail) {
+async function crearBandeja(repo, config, transporte = enviarGmail) {
   let ocupado = false;
   // Si una ejecución anterior se interrumpió, el estado es incierto: no reenviar solo.
-  repo.ejecutar("UPDATE correos SET estado='error',error='Envío interrumpido; comprobar antes de reintentar.' WHERE estado='enviando'");
+  await repo.ejecutar("UPDATE correos SET estado='error',error='Envío interrumpido; comprobar antes de reintentar.' WHERE estado='enviando'");
   return async function procesar() {
     if (ocupado || !config?.usuario || !config?.clave) return;
     ocupado = true;
     try {
-      const pendientes = repo.todos("SELECT * FROM correos WHERE estado='pendiente' ORDER BY id LIMIT 5");
+      const pendientes = await repo.todos("SELECT id FROM correos WHERE estado='pendiente' ORDER BY id LIMIT 5");
       for (const c of pendientes) {
-        repo.ejecutar("UPDATE correos SET estado='enviando',intentos=intentos+1 WHERE id=?",c.id);
-        try { await transporte(config,c); repo.ejecutar("UPDATE correos SET estado='enviado',error='' WHERE id=?",c.id); }
-        catch { repo.ejecutar("UPDATE correos SET estado='error',error='No se pudo enviar. Revisá Gmail y reintentá desde la app.' WHERE id=?",c.id); }
+        const correo = await repo.uno("UPDATE correos SET estado='enviando',intentos=intentos+1 WHERE id=$1 AND estado='pendiente' RETURNING *",c.id);
+        if (!correo) continue;
+        try { await transporte(config,correo); }
+        catch {
+          await repo.ejecutar("UPDATE correos SET estado='error',error='No se pudo enviar. Revisá Gmail y reintentá desde la app.' WHERE id=$1",correo.id);
+          continue;
+        }
+        await repo.ejecutar("UPDATE correos SET estado='enviado',error='' WHERE id=$1",correo.id);
       }
     } finally { ocupado=false; }
   };

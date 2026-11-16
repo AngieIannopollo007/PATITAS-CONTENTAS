@@ -6,6 +6,12 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+if not exist "node_modules\pg\package.json" (
+  echo Ejecuta npm.cmd ci en esta carpeta y volve a abrir PATITAS.
+  echo Segui la guia de PostgreSQL del README.md.
+  pause
+  exit /b 1
+)
 echo.
 echo PATITAS - Deja esta ventana abierta mientras usas la app.
 echo Abri http://127.0.0.1:3000 en tu navegador.
