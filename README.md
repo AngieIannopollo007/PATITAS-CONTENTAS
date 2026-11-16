@@ -6,7 +6,7 @@ Una aplicación basada en la idea original de Angie: conectar refugios, rescatis
 
 ## Si ya tenías PATITAS
 
-Leé **docs/ACTUALIZACION.md** para actualizar sin perder datos: cerrá el servidor, reemplazá los archivos del programa y conservá `datos/` y `.env`. Reiniciá y recargá la página.
+Leé [la guía de actualización](https://github.com/AngieIannopollo007/docmentacion-patitas/blob/main/material-complementario/docs/ACTUALIZACION.md) para actualizar sin perder datos: cerrá el servidor, reemplazá los archivos del programa y conservá `datos/` y `.env`. Reiniciá y recargá la página.
 
 ## Empezá por acá
 
@@ -67,7 +67,7 @@ Los cambios entre cuentas se hacen con Salir. El centro de avisos y el chat acti
 
 La app ya tiene como remitente sugerido **iannopolloangeline@gmail.com** en `.env.example`. Falta que completes vos una contraseña de aplicación de Google en tu computadora.
 
-Leé **docs/GMAIL.md**. No compartas esa contraseña ni la subas a GitHub. Sin configurarla, todo lo demás funciona y los avisos se guardan en Mi espacio → Notificaciones; en la pestaña Correos los emails figuran como «local». La app no dice que envió un correo si no lo hizo.
+Leé [la guía de Gmail](https://github.com/AngieIannopollo007/docmentacion-patitas/blob/main/material-complementario/docs/GMAIL.md). No compartas esa contraseña ni la subas a GitHub. Sin configurarla, todo lo demás funciona y los avisos se guardan en Mi espacio → Notificaciones; en la pestaña Correos los emails figuran como «local». La app no dice que envió un correo si no lo hizo.
 
 ## Donaciones y confianza
 
@@ -102,7 +102,7 @@ En una terminal dentro de PATITAS ejecutá:
 node --test
 ```
 
-Usan datos ficticios y bases temporales separadas. No borran tu base. Los resultados verificados están en reportes/pruebas.tap y docs/PRUEBAS.md.
+Usan datos ficticios y bases temporales separadas. No borran tu base. Los resultados verificados están en [el repositorio de documentación](https://github.com/AngieIannopollo007/docmentacion-patitas/tree/main/material-complementario).
 
 ## Si algo no abre
 
@@ -123,6 +123,4 @@ Los registros recientes del panel tienen límites indicados en pantalla. Las mas
 
 ## Documentación del proyecto
 
-La carpeta [documentacion](documentacion/README.md) reúne los manuales, requerimientos, DER, pruebas y explicación del código, con carátulas y PDF.
-
-Para ver la lista de documentos, descargá el repositorio y abrí **documentacion/index.html** en tu navegador.
+Los manuales, requerimientos, DER, guías y resultados de pruebas están en el [repositorio independiente de documentación](https://github.com/AngieIannopollo007/docmentacion-patitas).
