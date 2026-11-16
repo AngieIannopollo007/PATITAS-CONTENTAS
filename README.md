@@ -125,4 +125,4 @@ Los registros recientes del panel tienen límites indicados en pantalla. Las mas
 
 La carpeta [documentacion](documentacion/README.md) reúne los manuales, requerimientos, DER, pruebas y explicación del código, con carátulas y PDF.
 
-Para ver la biblioteca con búsqueda y filtros, descargá el repositorio y abrí **documentacion/index.html** en tu navegador.
+Para ver la lista de documentos, descargá el repositorio y abrí **documentacion/index.html** en tu navegador.

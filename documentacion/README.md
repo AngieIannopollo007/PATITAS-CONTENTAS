@@ -1,6 +1,6 @@
 # Documentación de PATITAS
 
-Abrí **index.html** en el navegador para ver la biblioteca lila con búsqueda y filtros.
+Abrí **index.html** en el navegador para ver la lista de documentos.
 No requiere instalar paquetes ni encender la app de adopciones.
 
 - **editables/**: once documentos principales y dos anexos, en HTML con carátula y texto fuente Markdown.
@@ -11,7 +11,7 @@ No requiere instalar paquetes ni encender la app de adopciones.
 
 Los documentos usan Arial, interlineado 1,5, títulos en negrita, texto justificado
 y fondo blanco. Las carátulas siguen la referencia proporcionada, con el nombre
-de cada documento y el escudo en blanco y negro. Solo el índice utiliza violetas y lilas.
+de cada documento y el escudo original a color. El interior conserva el blanco y negro. Solo el índice utiliza violetas y lilas.
 
 El contenido de los trece archivos Markdown se conserva. Esta entrega presenta
 HTML y PDF; no representa enlaces a documentos nativos creados en Google Docs.
