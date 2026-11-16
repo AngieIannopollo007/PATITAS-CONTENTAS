@@ -120,3 +120,9 @@ Para detener la app: Ctrl+C en la ventana del servidor. No borres la carpeta dat
 Versión educativa completa para uso local y pruebas. No está publicada en Internet. No incluye cobros online, verificación de identidad, recuperación de contraseña, mensajes instantáneos o certificación de refugios. Antes de recibir usuarios reales requiere preparación para publicación, HTTPS, controles contra abuso, recuperación de cuentas y un proceso real de administración y protección de datos. Las cuentas demo tienen contraseñas conocidas: no se deben usar en un despliegue real.
 
 Los registros recientes del panel tienen límites indicados en pantalla. Las mascotas del ejemplo son ficticias. El envío real por Gmail requiere configuración y no se verificó con credenciales de la usuaria.
+
+## Documentación del proyecto
+
+La carpeta [documentacion](documentacion/README.md) reúne los manuales, requerimientos, DER, pruebas y explicación del código, con carátulas y PDF.
+
+Para ver la biblioteca con búsqueda y filtros, descargá el repositorio y abrí **documentacion/index.html** en tu navegador.
