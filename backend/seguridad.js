@@ -19,6 +19,7 @@ function email(valor) {
   exigir(/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(limpio), 'Escribí un correo válido.');
   return limpio;
 }
+const correoDemo = correo => correo.endsWith('@patitas.test');
 function entero(valor, nombre, min, max) {
   exigir(Number.isSafeInteger(valor) && valor >= min && valor <= max, `${nombre}: usá un número entero entre ${min} y ${max}.`);
   return valor;
@@ -56,4 +57,4 @@ function validarFoto(valor, nombre='Foto', anterior='', obligatoria=true) {
   exigir(valida,`${nombre}: el archivo no parece una imagen válida.`);
   return valor;
 }
-module.exports = { ErrorApp, exigir, texto, email, entero, opcion, proteger, verificar, token, resumir, validarFoto };
+module.exports = { ErrorApp, exigir, texto, email, correoDemo, entero, opcion, proteger, verificar, token, resumir, validarFoto };

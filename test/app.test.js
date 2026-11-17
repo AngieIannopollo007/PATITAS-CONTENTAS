@@ -1,26 +1,53 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const os=require('node:os');
-const path=require('node:path');
-const {EventEmitter}=require('node:events');
+const {EventEmitter,once}=require('node:events');
+const http=require('node:http');
+const {randomUUID}=require('node:crypto');
+const {Pool}=require('pg');
 const {crearApp}=require('../backend/app');
+const {configuracionPostgres}=require('../backend/base');
+const {promoverAdministrador}=require('../backend/administrador');
 const {enviarGmail}=require('../backend/correo');
 const FOTO='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
 
+if (!process.env.PATITAS_TEST_DATABASE) throw Error('Configurá PATITAS_TEST_DATABASE para ejecutar las pruebas con PostgreSQL.');
+const config=configuracionPostgres({...process.env,DATABASE_URL:'',PGDATABASE:process.env.PATITAS_TEST_DATABASE});
+const postgres=new Pool(config);
+test.after(()=>postgres.end());
+
+async function conexionPrueba(t) {
+  const esquema='test_'+randomUUID().replaceAll('-','');
+  await postgres.query('CREATE SCHEMA '+esquema);
+  t.after(()=>postgres.query('DROP SCHEMA '+esquema+' CASCADE'));
+  return {...config,options:'-c search_path='+esquema};
+}
+
+// http.request permite enviar el Host público que recibiría la app detrás del proxy.
+async function pedirHTTP(url,{method,headers,body}={}) {
+  const req=http.request(url,{method,headers});
+  const respuesta=once(req,'response');
+  req.end(body);
+  const [res]=await respuesta;
+  const partes=[];
+  for await(const parte of res) partes.push(parte);
+  return new Response(Buffer.concat(partes),{status:res.statusCode,headers:res.headers});
+}
+
 async function entorno(t,opciones={}) {
-  const app=await crearApp(opciones);
+  const app=await crearApp({conexion:await conexionPrueba(t),...opciones});
   await new Promise((resolve,reject)=>{app.servidor.once('error',reject);app.servidor.listen(0,'127.0.0.1',resolve);});
   const base=`http://127.0.0.1:${app.servidor.address().port}`;
-  t.after(async()=>{await new Promise(resolve=>app.servidor.close(resolve));app.db.close();});
+  t.after(async()=>{await new Promise(resolve=>app.servidor.close(resolve));await app.db.end();});
+  const host=opciones.origenPublico ? {Host:new URL(opciones.origenPublico).host} : {};
+  const pedir=opciones.origenPublico ? pedirHTTP : fetch;
   function cliente() {
     let cookie='',csrf='';
     return {
       async pedir(ruta,method='GET',body,extra={}) {
-        const res=await fetch(base+ '/api'+ruta,{method,headers:{...(cookie?{Cookie:cookie}:{}),...(body?{'Content-Type':'application/json'}:{}),...(csrf?{'X-CSRF-Token':csrf}:{}),...extra},body:body?JSON.stringify(body):undefined});
+        const res=await pedir(base+ '/api'+ruta,{method,headers:{...host,...(cookie?{Cookie:cookie}:{}),...(body?{'Content-Type':'application/json'}:{}),...(csrf?{'X-CSRF-Token':csrf}:{}),...extra},body:body?JSON.stringify(body):undefined});
         const c=res.headers.get('set-cookie');if(c)cookie=c.split(';')[0];
         const datos=await res.json();if(datos.csrf)csrf=datos.csrf;
-        return {status:res.status,datos};
+        return {status:res.status,datos,cookie:c};
       },
       async ingresar(correo='ana@patitas.test') {const res=await this.pedir('/ingreso','POST',{email:correo,password:'Patitas2026!'});assert.equal(res.status,200);return res.datos.usuario;},
       async registrar(correo='nueva@example.com',tipo='adoptante') {const res=await this.pedir('/registro','POST',{nombre:'Cuenta Nueva',email:correo,foto:FOTO,password:'MiClave12345!',ciudad:'Buenos Aires',tipo});assert.equal(res.status,201);return res.datos.usuario;},
@@ -38,7 +65,7 @@ test('primero login: ningún dato de la comunidad sin sesión',async t=>{
 test('registro, sesión persistida y cierre efectivo',async t=>{
   const {cliente,app}=await entorno(t);const c=cliente();const u=await c.registrar();
   assert.equal(u.tipo,'adoptante');assert.equal(u.clave,undefined);
-  const guardada=app.repo.uno('SELECT clave FROM usuarios WHERE id=?',u.id).clave;
+  const guardada=(await app.repo.uno('SELECT clave FROM usuarios WHERE id=$1',u.id)).clave;
   assert.ok(!guardada.includes('MiClave'));assert.match(guardada,/^[a-f0-9]+:[a-f0-9]+$/);
   assert.equal((await c.pedir('/yo')).status,200);
   assert.equal((await c.pedir('/salir','POST',{})).status,200);
@@ -55,6 +82,48 @@ test('CSRF: rechaza token falso y origen ajeno',async t=>{
   assert.equal((await c.pedir('/salir','POST',{}, {'X-CSRF-Token':'falso'})).status,403);
   assert.equal((await c.pedir('/salir','POST',{}, {Origin:'https://otro.example'})).status,403);
 });
+test('producción: host y origen HTTPS, cookie segura y arranque sin cuentas demo',async t=>{
+  const origenPublico='https://patitas.example.com';
+  const {app,base,cliente}=await entorno(t,{origenPublico});
+  const c=cliente();
+  assert.equal((await fetch(base)).status,403);
+  const pagina=await pedirHTTP(base,{headers:{Host:'patitas.example.com'}});
+  assert.equal(pagina.status,200);
+  assert.match(pagina.headers.get('strict-transport-security'),/max-age=/);
+  assert.match(await pagina.text(),/data-demo="0"/);
+  const salud=await fetch(base+'/salud');
+  assert.equal(salud.status,200);
+  assert.deepEqual(await salud.json(),{estado:'ok'});
+  assert.equal((await app.repo.uno('SELECT COUNT(*) AS n FROM usuarios')).n,0);
+  const u=await c.registrar();
+  const datos={email:u.email,password:'MiClave12345!'};
+  assert.equal((await c.pedir('/ingreso','POST',datos,{Origin:'http://patitas.example.com'})).status,403);
+  const ingreso=await c.pedir('/ingreso','POST',datos,{Origin:origenPublico});
+  assert.equal(ingreso.status,200);
+  assert.match(ingreso.cookie,/; Secure;/);
+  const salida=await c.pedir('/salir','POST',{},{Origin:origenPublico});
+  assert.equal(salida.status,200);
+  assert.match(salida.cookie,/; Secure; Max-Age=0/);
+});
+test('producción: bloquea cuentas y sesiones demo existentes y habilita moderación propia',async t=>{
+  const conexion=await conexionPrueba(t);
+  const local=await crearApp({conexion});
+  let demo;
+  try {
+    demo=await local.servicios.ingresar({email:'admin@patitas.test',password:'Patitas2026!'});
+  } finally { await local.db.end(); }
+  const {cliente}=await entorno(t,{conexion,origenPublico:'https://patitas.example.com'});
+  const c=cliente();
+  assert.equal((await c.pedir('/yo','GET',null,{Cookie:'patitas='+demo.secreto})).status,401);
+  assert.equal((await c.pedir('/ingreso','POST',{email:'admin@patitas.test',password:'Patitas2026!'})).status,401);
+  await assert.rejects(promoverAdministrador(conexion,'demo@patitas.test'),/cuenta propia/);
+  const u=await c.registrar();
+  assert.equal(await promoverAdministrador(conexion,u.email),u.email);
+  assert.equal((await c.pedir('/yo')).status,401);
+  const ingreso=await c.pedir('/ingreso','POST',{email:u.email,password:'MiClave12345!'});
+  assert.equal(ingreso.status,200);
+  assert.equal((await c.pedir('/yo')).datos.usuario.tipo,'admin');
+});
 test('publicación, edición y retiro: solo su responsable',async t=>{
   const {cliente}=await entorno(t);const refugio=cliente(),adoptante=cliente(),otro=cliente();
   await refugio.ingresar('refugio@patitas.test');await adoptante.ingresar();await otro.ingresar('sofia@patitas.test');
@@ -62,6 +131,9 @@ test('publicación, edición y retiro: solo su responsable',async t=>{
   const creada=await refugio.pedir('/mascotas','POST',mascota);assert.equal(creada.status,201);
   assert.equal((await otro.pedir('/mascotas/'+creada.datos.id,'PATCH',mascota)).status,403);
   assert.equal((await refugio.pedir('/mascotas/'+creada.datos.id,'PATCH',{...mascota,nombre:'Nubecita'})).status,200);
+  const filtradas=(await adoptante.pedir('/mascotas?buscar=NUBECITA&especie=Gato')).datos;
+  assert.equal(filtradas.total,1);
+  assert.deepEqual(filtradas.datos.map(m=>m.id),[creada.datos.id]);
   assert.equal((await refugio.pedir('/mascotas/'+creada.datos.id,'DELETE',{})).status,200);
   assert.ok(!(await adoptante.pedir('/mascotas')).datos.datos.some(m=>m.id===creada.datos.id));
 });
@@ -87,9 +159,11 @@ test('aprobación: genera planilla, rechaza otras solicitudes y evita doble adop
   const {cliente}=await entorno(t);const a=cliente(),b=cliente(),r=cliente();await a.ingresar();await b.registrar('segunda@example.com');await r.ingresar('refugio@patitas.test');
   const s1=(await a.pedir('/solicitudes','POST',solicitud())).datos;
   const s2=(await b.pedir('/solicitudes','POST',{...solicitud(),nombre:'Otra Persona'})).datos;
-  assert.equal((await r.pedir('/solicitudes/'+s1.id,'PATCH',{estado:'aprobada',observaciones:'Entrevista realizada.'})).status,200);
+  const decisiones=await Promise.all([s1,s2].map(s =>
+    r.pedir('/solicitudes/'+s.id,'PATCH',{estado:'aprobada',observaciones:'Entrevista realizada.'})));
+  assert.deepEqual(decisiones.map(r=>r.status).sort(),[200,409]);
   const p=(await r.pedir('/panel')).datos;assert.equal(p.adopciones.length,1);assert.equal(p.adopciones[0].direccion,solicitud().direccion);
-  assert.equal(p.solicitudes.find(s=>s.id===s2.id).estado,'rechazada');
+  assert.deepEqual(p.solicitudes.map(s=>s.estado).sort(),['aprobada','rechazada']);
   assert.equal((await r.pedir('/solicitudes/'+s1.id,'PATCH',{estado:'aprobada'})).status,409);
   assert.equal((await b.pedir('/solicitudes','POST',solicitud())).status,409);
   assert.equal((await r.pedir('/adopciones/'+p.adopciones[0].id,'PATCH',{seguimiento:'Visita de seguimiento: todo bien.'})).status,200);
@@ -164,19 +238,23 @@ test('SMTP: diálogo TLS simulado, MIME base64 y aceptación final',async()=>{
   await enviarGmail({usuario:'test@example.com',clave:'ficticia'},{destinatario:'destino@example.com',asunto:'Solicitud para Luna',cuerpo:'Datos ficticios áéí'},conectar);
   assert.ok(enviados.some(l=>l.includes('Content-Transfer-Encoding: base64')));assert.equal(enviados.at(-1),'QUIT\r\n');
 });
-test('persistencia real después de cerrar y reabrir el archivo SQLite',async t=>{
-  const carpeta=fs.mkdtempSync(path.join(os.tmpdir(),'patitas-completa-'));
-  t.after(()=>fs.rmSync(carpeta,{recursive:true,force:true}));
-  const archivo=path.join(carpeta,'db.sqlite');
-  const primera=await crearApp({archivo,demo:true});
-  const u=primera.repo.uno("SELECT * FROM usuarios WHERE email='ana@patitas.test'");primera.servicios.solicitar(u,solicitud());primera.db.close();
-  const segunda=await crearApp({archivo,demo:true});
-  try{assert.equal(segunda.repo.uno('SELECT COUNT(*) AS n FROM solicitudes').n,1);assert.equal(segunda.repo.uno('SELECT COUNT(*) AS n FROM usuarios').n,4);}finally{segunda.db.close();}
+test('persistencia real después de cerrar y reabrir la conexión PostgreSQL',async t=>{
+  const conexion=await conexionPrueba(t);
+  const primera=await crearApp({conexion,demo:true});
+  try {
+    const u=await primera.repo.uno("SELECT * FROM usuarios WHERE email='ana@patitas.test'");
+    await primera.servicios.solicitar(u,solicitud());
+  } finally { await primera.db.end(); }
+  const segunda=await crearApp({conexion,demo:true});
+  try {
+    assert.equal((await segunda.repo.uno('SELECT COUNT(*) AS n FROM solicitudes')).n,1);
+    assert.equal((await segunda.repo.uno('SELECT COUNT(*) AS n FROM usuarios')).n,4);
+  } finally { await segunda.db.end(); }
 });
 test('archivos privados no disponibles, CSP presente y login estático accesible',async t=>{
   const {base}=await entorno(t);
   const pagina=await fetch(base);assert.equal(pagina.status,200);assert.ok(pagina.headers.get('content-security-policy').includes("script-src 'self'"));
-  for(const ruta of ['/.env','/datos/patitas.sqlite','/backend/base.js'])assert.equal((await fetch(base+ruta)).status,404);
+  for(const ruta of ['/.env','/backend/base.js','/backend/esquema.sql'])assert.equal((await fetch(base+ruta)).status,404);
   assert.equal((await fetch(base+'/imagenes/luna.svg')).status,200);
 });
 
@@ -210,12 +288,12 @@ test('HTTP: errores de JSON y de tipo, sin cambios en datos',async t=>{
   const mal=await fetch(base+'/api/ingreso',{method:'POST',headers:{'Content-Type':'application/json'},body:'{invalido'});
   assert.equal(mal.status,400);
   assert.equal((await fetch(base+'/api/ingreso',{method:'POST',body:'texto'})).status,415);
-  assert.equal(app.repo.uno('SELECT COUNT(*) AS n FROM sesiones').n,0);
+  assert.equal((await app.repo.uno('SELECT COUNT(*) AS n FROM sesiones')).n,0);
 });
 test('sesiones vencidas no habilitan acceso aunque exista la cookie',async t=>{
   const {cliente,app}=await entorno(t);const c=cliente();await c.ingresar();
-  const s=app.repo.uno('SELECT * FROM sesiones');assert.match(s.token,/^[a-f0-9]{64}$/);
-  app.repo.ejecutar('UPDATE sesiones SET vence=0');assert.equal((await c.pedir('/panel')).status,401);
+  const s=await app.repo.uno('SELECT * FROM sesiones');assert.match(s.token,/^[a-f0-9]{64}$/);
+  await app.repo.ejecutar('UPDATE sesiones SET vence=0');assert.equal((await c.pedir('/panel')).status,401);
 });
 
 test('registro con foto obligatoria y 5 PATITAS de bienvenida una sola vez',async t=>{
@@ -258,7 +336,7 @@ test('notificaciones privadas: contador, lectura persistente y sin marcar mensaj
 });
 test('historial del chat paginado: permite recuperar mensajes anteriores sin mezclarlos',async t=>{
   const {cliente,app}=await entorno(t);const a=cliente();const u=await a.ingresar();
-  for(let i=0;i<105;i++)app.servicios.mensaje(u,{receptor_id:1,cuerpo:'Mensaje '+i});
+  for(let i=0;i<105;i++)await app.servicios.mensaje(u,{receptor_id:1,cuerpo:'Mensaje '+i});
   const actual=(await a.pedir('/chat/1')).datos;assert.equal(actual.mensajes.length,100);assert.equal(actual.hayAnteriores,true);
   const antes=(await a.pedir('/chat/1?antes='+actual.mensajes[0].id)).datos;assert.equal(antes.mensajes.length,5);assert.equal(antes.hayAnteriores,false);
   assert.equal(new Set([...antes.mensajes,...actual.mensajes].map(m=>m.id)).size,105);
@@ -273,17 +351,6 @@ test('avisos y emails importantes: donación, confirmación y mensaje llegan a s
   p=(await r.pedir('/panel')).datos;assert.equal(p.correos.length,2);assert.match(p.correos[0].asunto,/mensaje/);
   const ns=(await r.pedir('/notificaciones')).datos;assert.deepEqual(ns.datos.map(n=>n.tipo),['mensaje','donacion']);
 });
-test('actualización de una base anterior: conserva datos y no duplica bienvenida ni avisos',async t=>{
-  const {DatabaseSync}=require('node:sqlite');
-  const {conectar}=require('../backend/base');
-  const carpeta=fs.mkdtempSync(path.join(os.tmpdir(),'patitas-migracion-'));t.after(()=>fs.rmSync(carpeta,{recursive:true,force:true}));
-  const archivo=path.join(carpeta,'anterior.sqlite');const vieja=new DatabaseSync(archivo);
-  vieja.exec("CREATE TABLE usuarios(id INTEGER PRIMARY KEY,nombre TEXT,email TEXT,clave TEXT,tipo TEXT,ciudad TEXT DEFAULT '',descripcion TEXT DEFAULT '',telefono TEXT DEFAULT '',direccion TEXT DEFAULT '',alias_donacion TEXT DEFAULT '',contacto_publico TEXT DEFAULT '',creado TEXT); INSERT INTO usuarios(id,nombre,email,clave,tipo) VALUES(1,'Persona anterior','anterior@example.com','ficticia','adoptante');");vieja.close();
-  let db=conectar(archivo);assert.equal(db.prepare('SELECT bienvenida FROM usuarios WHERE id=1').get().bienvenida,5);
-  db.prepare("INSERT INTO correos(usuario_id,destinatario,asunto,cuerpo) VALUES(1,'anterior@example.com','Aviso antiguo','Sin cambios')").run();db.close();
-  for(let i=0;i<2;i++){db=conectar(archivo);assert.equal(db.prepare('SELECT bienvenida FROM usuarios WHERE id=1').get().bienvenida,5);assert.equal(db.prepare('SELECT COUNT(*) AS n FROM notificaciones').get().n,1);assert.equal(db.prepare('SELECT nombre FROM usuarios WHERE id=1').get().nombre,'Persona anterior');db.close();}
-});
-
 test('chat con administración: refugio responde al admin desde la sala y el aviso',async t=>{
   const {cliente}=await entorno(t);const admin=cliente(),refugio=cliente(),sofia=cliente();
   await admin.ingresar('admin@patitas.test');await refugio.ingresar('refugio@patitas.test');await sofia.ingresar('sofia@patitas.test');
