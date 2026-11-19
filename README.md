@@ -1,4 +1,4 @@
-# PATITAS 🐾
+# PATITAS 🐾 
 
 Una aplicación basada en la idea original de Angie: conectar refugios, rescatistas y adoptantes, organizar adopciones y reconocer las colaboraciones con puntos PATITAS. Código creado desde cero con asistencia de IA.
 
