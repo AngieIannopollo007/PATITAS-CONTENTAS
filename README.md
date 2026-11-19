@@ -1,8 +1,16 @@
 # PATITAS 🐾
 
-Una aplicación basada en la idea original de Angie: conectar refugios, rescatistas y adoptantes, organizar adopciones y reconocer las colaboraciones con puntos PATITAS. Código creado desde cero con asistencia de IA.
+Aplicación basada en la idea original de Angeline Iannopollo: conectar refugios, rescatistas y adoptantes, organizar adopciones y reconocer las colaboraciones con puntos PATITAS. Código creado desde cero con asistencia de IA.
 
 **Hay una sola versión.** No hay carpetas ANTES y DESPUÉS. Esta es la aplicación, con frontend, backend y base de datos.
+
+##Integrantes
+
+- Dominguez Victoria
+- Galindez Sofia
+- Igarzabal Felipe
+- Iannopollo Angeline
+- Seiberth Valentin
 
 ## Configurar PostgreSQL desde pgAdmin en Windows
 
